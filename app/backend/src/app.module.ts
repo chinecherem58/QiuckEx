@@ -57,7 +57,15 @@ import { AbuseSignalMiddleware } from "./abuse-signals/abuse-signal.middleware";
 import { PreviewScopeModule } from "./preview-scope/preview-scope.module";
 import { PreviewScopeMiddleware } from "./preview-scope/preview-scope.middleware";
 import { BranchPreviewModule } from "./branch-preview/branch-preview.module";
+import { RuntimeConfigModule } from "./runtime-config/runtime-config.module";
 import { TransactionTimelineModule } from "./transaction-timeline/transaction-timeline.module";
+import { DashboardFeedModule } from "./dashboard-feed/dashboard-feed.module";
+import { OutboxModule } from "./events/outbox/outbox.module";
+import { DeploymentSyncModule } from "./deployment-sync/deployment-sync.module";
+import { ManifestsModule } from "./manifests/manifests.module";
+import { TeamsModule } from "./teams/teams.module";
+import { ReceiptsModule } from "./receipts/receipts.module";
+import { resolveOptionalModules } from "./config/optional-modules";
 
 type AppImport =
 | Type<unknown>
@@ -90,6 +98,7 @@ PaymentsModule,
 IngestionModule,
 ApiKeysModule,
 MarketplaceModule,
+TeamsModule,
 FiatRampsModule,
 RefundsModule,
 ExportsModule,
@@ -100,36 +109,38 @@ FeatureFlagsModule,
 PrivacyModule,
 SorobanToolingModule,
 EnvironmentParityModule,
-  BranchPreviewModule,
-  IndexerLagModule,
+    BranchPreviewModule,
+    RuntimeConfigModule,
+    IndexerLagModule,
 SupportBundleModule,
 OperationsModule,
     RcValidationModule,
     AbuseSignalsModule,
     PreviewScopeModule,
     TransactionTimelineModule,
+    DashboardFeedModule,
+    OutboxModule,
+    DeploymentSyncModule,
+    ManifestsModule,
+    ReceiptsModule,
     ];
 
-    try {
-  const supabaseUrl = process.env.SUPABASE_URL ?? "";
-  const isLocalSupabase =
-    supabaseUrl.includes("localhost") ||
-    supabaseUrl.includes("127.0.0.1");
-
-  if (!isLocalSupabase) {
-    baseImports.push(ReconciliationModule as AppImport);
-    baseImports.push(NotificationsModule as AppImport);
-    baseImports.push(DeveloperModule as AppImport);
-  } else {
-    console.log(
-      "Skipping Reconciliation & Notifications modules in dev (local Supabase)",
-    );
-  }
-} catch (e) {
-  baseImports.push(ReconciliationModule as AppImport);
-  baseImports.push(NotificationsModule as AppImport);
-  baseImports.push(DeveloperModule as AppImport);
-}
+    // #1061: optional modules are selected only by the explicit
+    // ENABLE_*_MODULE flags (config/optional-modules.ts) — no SUPABASE_URL
+    // sniffing, and no catch-all: an invalid or unsupported flag value throws
+    // and stops startup instead of silently changing which modules load.
+    const optionalModules = resolveOptionalModules(process.env);
+    if (optionalModules.reconciliation) {
+      baseImports.push(ReconciliationModule as AppImport);
+    }
+    if (optionalModules.notifications) {
+      baseImports.push(NotificationsModule as AppImport);
+    }
+    if (optionalModules.developer) {
+      baseImports.push(DeveloperModule as AppImport);
+    } else {
+      console.log("DeveloperModule disabled via ENABLE_DEVELOPER_MODULE=false");
+    }
 
 return baseImports;
 

@@ -8,6 +8,7 @@ import {
 } from 'react-native';
 
 import { useEnvironment } from '../contexts/EnvironmentContext';
+import { useSessionOptional } from '../contexts/SessionContext';
 import { useTheme } from '../src/theme/ThemeContext';
 
 export function EnvironmentSwitcher() {
@@ -20,14 +21,15 @@ export function EnvironmentSwitcher() {
     metadata,
     compatibility,
     isFetchingMetadata,
-    fetchMetadata,
   } = useEnvironment();
+  const session = useSessionOptional();
+  const fetchSession = session?.fetchSession;
 
   useEffect(() => {
-    if (currentId !== 'production') {
-      fetchMetadata();
+    if (currentId !== 'production' && fetchSession) {
+      void fetchSession();
     }
-  }, [currentId, fetchMetadata]);
+  }, [currentId, fetchSession]);
 
   return (
     <View
@@ -180,7 +182,7 @@ export function EnvironmentSwitcher() {
               styles.fetchButton,
               { borderColor: theme.buttonSecondaryBorder },
             ]}
-            onPress={fetchMetadata}
+            onPress={fetchSession}
           >
             <Text
               style={[
@@ -296,6 +298,9 @@ const styles = StyleSheet.create({
   metadataValue: {
     fontSize: 13,
     fontWeight: '700',
+  },
+  metadataText: {
+    fontSize: 13,
   },
   compatibilityBadge: {
     borderRadius: 8,

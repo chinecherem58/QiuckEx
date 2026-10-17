@@ -1,3 +1,4 @@
+import { clearNotificationWalletSigner } from "../services/notification-wallet-auth";
 import React, {
   createContext,
   useCallback,
@@ -25,6 +26,10 @@ import {
   saveWalletSession,
   touchSession,
 } from "../services/wallet-session";
+import {
+  deregisterDeviceToken,
+  registerDeviceToken,
+} from "../services/device-token-registration";
 import { useSecurity } from "./use-security";
 import { useEnvironment } from "../contexts/EnvironmentContext";
 
@@ -129,6 +134,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({
 
           await touchSession();
         } else if (session && invalidReason.invalid) {
+          clearNotificationWalletSigner();
           await clearWalletSession();
           await clearSensitiveSessionToken();
 
@@ -251,6 +257,18 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({
           error: undefined,
           isRestoring: false,
         });
+
+        // Register (or refresh) the device push token for the newly
+        // connected wallet. This is the authoritative "first grant" moment
+        // for the user, so it lives here rather than in the root-layout
+        // effect. Failures are queued and reported to crash monitoring by
+        // the service itself, so we don't need to await the result.
+        void registerDeviceToken({ publicKey }).catch((error) => {
+          console.warn(
+            "[device-token] register after connect failed:",
+            error,
+          );
+        });
       } catch (err) {
         const error: WalletError =
           err && typeof err === "object" && "code" in err
@@ -271,6 +289,23 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({
   // ── Disconnect ───────────────────────────────────────────────────────────
 
   const disconnect = useCallback(async () => {
+    const previousPublicKey = wallet.publicKey;
+
+    // Best-effort deregister before we lose the session. The service will
+    // also wipe the local record and queue a retry on failure, so we
+    // don't need to await it before continuing the sign-out flow.
+    if (previousPublicKey) {
+      try {
+        await deregisterDeviceToken({ publicKey: previousPublicKey });
+      } catch (error) {
+        console.warn(
+          "[device-token] deregister after disconnect failed:",
+          error,
+        );
+      }
+    }
+
+    clearNotificationWalletSigner();
     await clearWalletSession();
     await clearSensitiveSessionToken();
 
@@ -285,7 +320,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({
       error: undefined,
       isRestoring: false,
     });
-  }, [clearSensitiveSessionToken, wallet.network]);
+  }, [clearSensitiveSessionToken, wallet.network, wallet.publicKey]);
 
   // ── Switch account (within same wallet provider) ─────────────────────────
 
@@ -315,6 +350,17 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({
           connectedAt: now,
           error: undefined,
         }));
+
+        // Re-register the device token against the new public key so the
+        // old wallet stops receiving notifications for the new account.
+        void registerDeviceToken({ publicKey: newPublicKey, force: true }).catch(
+          (error) => {
+            console.warn(
+              "[device-token] register after switchAccount failed:",
+              error,
+            );
+          },
+        );
       } catch (err) {
         const error: WalletError = walletError(
           "connection_failed",
